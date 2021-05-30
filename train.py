@@ -28,6 +28,12 @@ parser.add_argument(
 parser.add_argument(
     "--pre-train", type=int, default=-1, help="set 1 when you use pre-trained models"
 )
+parser.add_argument(
+    "--out-dir",
+    type=str,
+    default=None,
+    help="set the output directory of generated files",
+)
 
 args = parser.parse_args()
 cuda = args.cuda
@@ -35,6 +41,7 @@ ngpu = args.ngpu
 batch_size = args.batch_size
 n_iter = args.niter
 pre_train = args.pre_train
+out_dir = args.out_dir
 
 if cuda > 0 and ngpu < 0:
     ngpu = torch.cuda.device_count()
@@ -145,6 +152,9 @@ def save_video(fake_video, epoch):
     dir_path = os.path.join(current_path, "generated_videos")
     file_path = os.path.join(dir_path, "fakeVideo_epoch-%d.mp4" % epoch)
     skvideo.io.vwrite(file_path, outputdata)
+    if out_dir is not None:
+        file_path = os.path.join(out_dir, "fakeVideo_epoch-%d.mp4" % epoch)
+        skvideo.io.vwrite(file_path, outputdata)
 
 
 """ adjust to cuda """
