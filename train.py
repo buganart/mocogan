@@ -66,9 +66,22 @@ parser.add_argument("--d_E", type=int, default=10)
 parser.add_argument("--hidden_size", type=int, default=100)
 parser.add_argument("--d_C", type=int, default=50)
 parser.add_argument("--d_M", type=int, default=10)
+parser.add_argument(
+    "--video_epoch",
+    type=int,
+    default=1000,
+    help="the number of epoch to save 1 generated video",
+)
+parser.add_argument(
+    "--checkpoint_epoch",
+    type=int,
+    default=10000,
+    help="the number of epoch to save model checkpoint",
+)
 
 
 args = parser.parse_args()
+# these variables may be when resume run
 resume_id = args.resume_id
 mode_run = args.mode_run
 out_dir = args.out_dir
@@ -76,13 +89,14 @@ cuda = args.cuda
 ngpu = args.ngpu
 batch_size = args.batch_size
 
+
 if mode_run:
     mode = "run"
 else:
     mode = "offline"
 
 """ set wandb run """
-
+start_epoch = 1
 if resume_id:
     run_id = resume_id
 
@@ -90,6 +104,9 @@ if resume_id:
     api = wandb.Api()
     previous_run = api.run(f"demiurge/moco-gan/{resume_id}")
     args = argparse.Namespace(**previous_run.config)
+    start_epoch = previous_run.lastHistoryStep
+    # as checkpoint is saved based on args.checkpoint_epoch
+    start_epoch = start_epoch - (start_epoch % args.checkpoint_epoch)
 else:
     run_id = wandb.util.generate_id()
 
@@ -117,6 +134,8 @@ d_C = args.d_C
 d_M = args.d_M
 nz = d_C + d_M
 criterion = nn.BCELoss()
+video_epoch = args.video_epoch
+checkpoint_epoch = args.checkpoint_epoch
 
 if cuda > 0 and ngpu < 0:
     ngpu = torch.cuda.device_count()
@@ -253,6 +272,7 @@ optim_GRU = optim.Adam(gru.parameters(), lr=lr, betas=betas)
 """ use pre-trained models """
 
 if resume_id:
+    print(f"resuming model from wandb run_id: {resume_id}......")
     DI_model = wandb.restore("Discriminator_I.model")
     DV_model = wandb.restore("Discriminator_V.model")
     GI_model = wandb.restore("Generator_I.model")
@@ -312,10 +332,10 @@ def gen_z(n_frames):
 
 
 """ train models """
-
+print("start training......")
 start_time = time.time()
 
-for epoch in range(1, n_iter + 1):
+for epoch in range(start_epoch, n_iter + 1):
     """prepare real images"""
     # real_videos.size() => (batch_size, nc, T, img_size, img_size)
     real_videos = random_choice()
@@ -362,6 +382,18 @@ for epoch in range(1, n_iter + 1):
     err_Gi, _ = bp_i(fake_img, 0.9)
     optim_Gi.step()
     optim_GRU.step()
+
+    # wandb log
+    log_dict = {}
+    log_dict["Loss_Di"] = err_Di
+    log_dict["Loss_Dv"] = err_Dv
+    log_dict["Loss_Gi"] = err_Gi
+    log_dict["Loss_Gv"] = err_Gv
+    log_dict["Di_real_mean"] = Di_real_mean
+    log_dict["Di_fake_mean"] = Di_fake_mean
+    log_dict["Dv_real_mean"] = Dv_real_mean
+    log_dict["Dv_fake_mean"] = Dv_fake_mean
+    wandb.log(log_dict, step=epoch)
 
     if epoch % 100 == 0:
         print(
