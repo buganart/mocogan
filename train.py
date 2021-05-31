@@ -20,28 +20,102 @@ parser.add_argument(
     "--ngpu", type=int, default=-1, help="set the number of gpu you use"
 )
 parser.add_argument(
-    "--batch-size", type=int, default=16, help="set batch_size, default: 16"
+    "--batch_size", type=int, default=16, help="set batch_size, default: 16"
 )
 parser.add_argument(
     "--niter", type=int, default=120000, help="set num of iterations, default: 120000"
 )
 parser.add_argument(
-    "--pre-train", type=int, default=-1, help="set 1 when you use pre-trained models"
-)
-parser.add_argument(
-    "--out-dir",
+    "--out_dir",
     type=str,
     default=None,
     help="set the output directory of generated files",
 )
+parser.add_argument(
+    "--resume_id",
+    type=str,
+    default=None,
+    help="set wandb run id of logged run to resume from there",
+)
+parser.add_argument(
+    "--mode_run",
+    type=bool,
+    default=True,
+    help="set wandb run mode ('run':True or 'offline':False)",
+)
+
+parser.add_argument(
+    "--lr",
+    type=float,
+    default=0.0002,
+    help="learning rate of the model (all components)",
+)
+parser.add_argument(
+    "--img_size",
+    type=int,
+    default=96,
+    help="the height and width of input (resized) video",
+)
+parser.add_argument(
+    "--nc", type=int, default=3, help="the number of channel of input (resized) video"
+)
+parser.add_argument("--ndf", type=int, default=64)
+parser.add_argument("--ngf", type=int, default=64)
+parser.add_argument("--d_E", type=int, default=10)
+parser.add_argument("--hidden_size", type=int, default=100)
+parser.add_argument("--d_C", type=int, default=50)
+parser.add_argument("--d_M", type=int, default=10)
+
 
 args = parser.parse_args()
+resume_id = args.resume_id
+mode_run = args.mode_run
+out_dir = args.out_dir
 cuda = args.cuda
 ngpu = args.ngpu
 batch_size = args.batch_size
+
+""" set wandb run """
+
+if resume_id:
+    run_id = resume_id
+
+    # args will be replaced by the one stored in wandb
+    api = wandb.Api()
+    previous_run = api.run(f"demiurge/moco-gan/{resume_id}")
+    args = Namespace(**previous_run.config)
+else:
+    run_id = wandb.util.generate_id()
+
+run = wandb.init(
+    project="moco-gan",
+    id=run_id,
+    entity="demiurge",
+    resume=True,
+    dir="./",
+    mode=mode,
+)
+wandb.config.update(args, allow_val_change=True)
+
+""" parameters """
 n_iter = args.niter
-pre_train = args.pre_train
-out_dir = args.out_dir
+
+lr = args.lr
+img_size = args.img_size
+nc = args.nc
+ndf = args.ndf
+ngf = args.ngf
+d_E = args.d_E
+hidden_size = args.hidden_size
+d_C = args.d_C
+d_M = args.d_M
+nz = d_C + d_M
+criterion = nn.BCELoss()
+
+if mode_run:
+    mode = "run"
+else:
+    mode = "offline"
 
 if cuda > 0 and ngpu < 0:
     ngpu = torch.cuda.device_count()
@@ -101,18 +175,6 @@ def random_choice():
 video_lengths = [video.shape[1] for video in videos]
 
 """ set models """
-
-img_size = 96
-nc = 3
-ndf = 64  # from dcgan
-ngf = 64
-d_E = 10
-hidden_size = 100  # guess
-d_C = 50
-d_M = d_E
-nz = d_C + d_M
-criterion = nn.BCELoss()
-
 dis_i = Discriminator_I(nc, ndf, ngpu=ngpu)
 dis_v = Discriminator_V(nc, ndf, T=T, ngpu=ngpu)
 gen_i = Generator_I(nc, ngf, nz, ngpu=ngpu)
@@ -145,6 +207,17 @@ def checkpoint(model, optimizer, epoch):
     torch.save(model.state_dict(), filename + ".model")
     torch.save(optimizer.state_dict(), filename + ".state")
 
+    # also save as latest checkpoint
+    filename_latest = os.path.join(current_path, "%s" % (model.__class__.__name__))
+    torch.save(model.state_dict(), filename_latest + ".model")
+    torch.save(optimizer.state_dict(), filename_latest + ".state")
+
+    # upload to wandb
+    wandb.save(filename + ".model")
+    wandb.save(filename + ".state")
+    wandb.save(filename_latest + ".model")
+    wandb.save(filename_latest + ".state")
+
 
 def save_video(fake_video, epoch):
     outputdata = fake_video * 255
@@ -169,7 +242,6 @@ if cuda == True:
 
 
 # setup optimizer
-lr = 0.0002
 betas = (0.5, 0.999)
 optim_Di = optim.Adam(dis_i.parameters(), lr=lr, betas=betas)
 optim_Dv = optim.Adam(dis_v.parameters(), lr=lr, betas=betas)
@@ -179,15 +251,24 @@ optim_GRU = optim.Adam(gru.parameters(), lr=lr, betas=betas)
 
 """ use pre-trained models """
 
-if pre_train == True:
-    dis_i.load_state_dict(torch.load(trained_path + "/Discriminator_I.model"))
-    dis_v.load_state_dict(torch.load(trained_path + "/Discriminator_V.model"))
-    gen_i.load_state_dict(torch.load(trained_path + "/Generator_I.model"))
-    gru.load_state_dict(torch.load(trained_path + "/GRU.model"))
-    optim_Di.load_state_dict(torch.load(trained_path + "/Discriminator_I.state"))
-    optim_Dv.load_state_dict(torch.load(trained_path + "/Discriminator_V.state"))
-    optim_Gi.load_state_dict(torch.load(trained_path + "/Generator_I.state"))
-    optim_GRU.load_state_dict(torch.load(trained_path + "/GRU.state"))
+if resume_id:
+    DI_model = wandb.restore("Discriminator_I.model")
+    DV_model = wandb.restore("Discriminator_V.model")
+    GI_model = wandb.restore("Generator_I.model")
+    GRU_model = wandb.restore("GRU.model")
+    DI_state = wandb.restore("Discriminator_I.state")
+    DV_state = wandb.restore("Discriminator_V.state")
+    GI_state = wandb.restore("Generator_I.state")
+    GRU_state = wandb.restore("GRU.state")
+
+    dis_i.load_state_dict(torch.load(DI_model.name))
+    dis_v.load_state_dict(torch.load(DV_model.name))
+    gen_i.load_state_dict(torch.load(GI_model.name))
+    gru.load_state_dict(torch.load(GRU_model.name))
+    optim_Di.load_state_dict(torch.load(DI_state.name))
+    optim_Dv.load_state_dict(torch.load(DV_state.name))
+    optim_Gi.load_state_dict(torch.load(GI_state.name))
+    optim_GRU.load_state_dict(torch.load(GRU_state.name))
 
 
 """ calc grad of models """
@@ -234,7 +315,7 @@ def gen_z(n_frames):
 start_time = time.time()
 
 for epoch in range(1, n_iter + 1):
-    """ prepare real images """
+    """prepare real images"""
     # real_videos.size() => (batch_size, nc, T, img_size, img_size)
     real_videos = random_choice()
     if cuda == True:
