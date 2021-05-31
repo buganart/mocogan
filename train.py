@@ -413,10 +413,10 @@ for epoch in range(start_epoch, n_iter + 1):
             )
         )
 
-    if epoch % 1000 == 0:
+    if epoch % video_epoch == 0:
         save_video(fake_videos[0].data.cpu().numpy().transpose(1, 2, 3, 0), epoch)
 
-    if epoch % 10000 == 0:
+    if epoch % checkpoint_epoch == 0:
         checkpoint(dis_i, optim_Di, epoch)
         checkpoint(dis_v, optim_Dv, epoch)
         checkpoint(gen_i, optim_Gi, epoch)
