@@ -8,6 +8,7 @@ import math
 import skvideo.io
 import numpy as np
 import torch
+import wandb
 from torch import nn, optim
 from torch.autograd import Variable
 
@@ -75,6 +76,11 @@ cuda = args.cuda
 ngpu = args.ngpu
 batch_size = args.batch_size
 
+if mode_run:
+    mode = "run"
+else:
+    mode = "offline"
+
 """ set wandb run """
 
 if resume_id:
@@ -83,7 +89,7 @@ if resume_id:
     # args will be replaced by the one stored in wandb
     api = wandb.Api()
     previous_run = api.run(f"demiurge/moco-gan/{resume_id}")
-    args = Namespace(**previous_run.config)
+    args = argparse.Namespace(**previous_run.config)
 else:
     run_id = wandb.util.generate_id()
 
@@ -111,11 +117,6 @@ d_C = args.d_C
 d_M = args.d_M
 nz = d_C + d_M
 criterion = nn.BCELoss()
-
-if mode_run:
-    mode = "run"
-else:
-    mode = "offline"
 
 if cuda > 0 and ngpu < 0:
     ngpu = torch.cuda.device_count()
