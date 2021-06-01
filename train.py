@@ -106,7 +106,7 @@ if resume_id:
     args = argparse.Namespace(**previous_run.config)
     start_epoch = previous_run.lastHistoryStep
     # as checkpoint is saved based on args.checkpoint_epoch
-    start_epoch = start_epoch - (start_epoch % args.checkpoint_epoch)
+    start_epoch = start_epoch - (start_epoch % args.checkpoint_epoch) + 1
 else:
     run_id = wandb.util.generate_id()
 
