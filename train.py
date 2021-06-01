@@ -119,6 +119,8 @@ run = wandb.init(
     mode=mode,
 )
 wandb.config.update(args, allow_val_change=True)
+print("run id: " + str(wandb.run.id))
+print("run name: " + str(wandb.run.name))
 
 """ parameters """
 n_iter = args.niter
@@ -239,14 +241,14 @@ def checkpoint(model, optimizer, epoch):
     wandb.save(filename_latest + ".state")
 
 
-def save_video(fake_video, epoch):
+def save_video(fake_video, epoch, run_id):
     outputdata = fake_video * 255
     outputdata = outputdata.astype(np.uint8)
     dir_path = os.path.join(current_path, "generated_videos")
-    file_path = os.path.join(dir_path, "fakeVideo_epoch-%d.mp4" % epoch)
+    file_path = os.path.join(dir_path, f"fakeVideo_epoch-{epoch}+{run_id}.mp4")
     skvideo.io.vwrite(file_path, outputdata)
     if out_dir is not None:
-        file_path = os.path.join(out_dir, "fakeVideo_epoch-%d.mp4" % epoch)
+        file_path = os.path.join(out_dir, f"fakeVideo_epoch-{epoch}+{run_id}.mp4")
         skvideo.io.vwrite(file_path, outputdata)
 
 
@@ -383,19 +385,19 @@ for epoch in range(start_epoch, n_iter + 1):
     optim_Gi.step()
     optim_GRU.step()
 
-    # wandb log
-    log_dict = {}
-    log_dict["Loss_Di"] = err_Di
-    log_dict["Loss_Dv"] = err_Dv
-    log_dict["Loss_Gi"] = err_Gi
-    log_dict["Loss_Gv"] = err_Gv
-    log_dict["Di_real_mean"] = Di_real_mean
-    log_dict["Di_fake_mean"] = Di_fake_mean
-    log_dict["Dv_real_mean"] = Dv_real_mean
-    log_dict["Dv_fake_mean"] = Dv_fake_mean
-    wandb.log(log_dict, step=epoch)
-
     if epoch % 100 == 0:
+        # wandb log
+        log_dict = {}
+        log_dict["Loss_Di"] = err_Di
+        log_dict["Loss_Dv"] = err_Dv
+        log_dict["Loss_Gi"] = err_Gi
+        log_dict["Loss_Gv"] = err_Gv
+        log_dict["Di_real_mean"] = Di_real_mean
+        log_dict["Di_fake_mean"] = Di_fake_mean
+        log_dict["Dv_real_mean"] = Dv_real_mean
+        log_dict["Dv_fake_mean"] = Dv_fake_mean
+        wandb.log(log_dict, step=epoch)
+
         print(
             "[%d/%d] (%s) Loss_Di: %.4f Loss_Dv: %.4f Loss_Gi: %.4f Loss_Gv: %.4f Di_real_mean %.4f Di_fake_mean %.4f Dv_real_mean %.4f Dv_fake_mean %.4f"
             % (
@@ -414,7 +416,11 @@ for epoch in range(start_epoch, n_iter + 1):
         )
 
     if epoch % video_epoch == 0:
-        save_video(fake_videos[0].data.cpu().numpy().transpose(1, 2, 3, 0), epoch)
+        save_video(
+            fake_videos[0].data.cpu().numpy().transpose(1, 2, 3, 0),
+            epoch,
+            str(wandb.run.id),
+        )
 
     if epoch % checkpoint_epoch == 0:
         checkpoint(dis_i, optim_Di, epoch)
