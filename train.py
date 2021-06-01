@@ -247,6 +247,7 @@ def save_video(fake_video, epoch, run_id):
     dir_path = os.path.join(current_path, "generated_videos")
     file_path = os.path.join(dir_path, f"fakeVideo_epoch-{epoch}+{run_id}.mp4")
     skvideo.io.vwrite(file_path, outputdata)
+    wandb.log({"generated_videos": wandb.Video(file_path)}, step=epoch)
     if out_dir is not None:
         file_path = os.path.join(out_dir, f"fakeVideo_epoch-{epoch}+{run_id}.mp4")
         skvideo.io.vwrite(file_path, outputdata)
