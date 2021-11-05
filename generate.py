@@ -41,6 +41,10 @@ resume_id = args.resume_id
 video_dir = args.video_dir
 num_generate_video = int(args.num_generate_video)
 
+if num_generate_video <= 0:
+    import sys
+    sys.exit()
+
 """ set wandb run """
 # args will be replaced by the one stored in wandb
 api = wandb.Api()
